@@ -8,7 +8,7 @@ permissions:
   issues: write
 
 env:
-  SOURCE_PROJECT_NUMBER: "6"
+  SOURCE_PROJECT_NUMBER: "1"
 
 jobs:
   integration:
