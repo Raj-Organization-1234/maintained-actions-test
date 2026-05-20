@@ -8,7 +8,7 @@ permissions:
   issues: write
 
 env:
-  SOURCE_PROJECT_NUMBER: "1"
+  SOURCE_PROJECT_NUMBER: "3"
 
 jobs:
   integration:
@@ -102,14 +102,14 @@ jobs:
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.add-item.outputs.id }}
+          item: ${{ steps.setup-issue.outputs.url }}
 
       - name: edit-item
         uses: step-security/dsanders11-project-actions/edit-item@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.add-item.outputs.id }}
+          item: ${{ steps.setup-issue.outputs.url }}
           field: Status
           field-value: Done
 
@@ -125,14 +125,14 @@ jobs:
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.add-item.outputs.id }}
+          item: ${{ steps.setup-issue.outputs.url }}
 
       - name: delete-item
         uses: step-security/dsanders11-project-actions/delete-item@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.add-item.outputs.id }}
+          item: ${{ steps.setup-issue.outputs.url }}
 
       - name: close-project
         uses: step-security/dsanders11-project-actions/close-project@release
