@@ -7,9 +7,6 @@ permissions:
   contents: read
   issues: write
 
-env:
-  SOURCE_PROJECT_NUMBER: "3"
-
 jobs:
   integration:
     name: All sub-actions chained (@release)
@@ -23,16 +20,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Create test issue
-        id: setup-issue
+      - name: Create test issues
+        id: setup-issues
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          url=$(gh issue create -R "${{ github.repository }}" \
-            --title "[project-actions test ${{ github.run_id }}]" \
-            --body "Auto-created by workflow run ${{ github.run_id }}")
-          echo "Created: $url"
-          echo "url=$url" >> "$GITHUB_OUTPUT"
+          url1=$(gh issue create -R "${{ github.repository }}" \
+            --title "[project-actions ${{ github.run_id }}] archive target" \
+            --body "Auto-created issue for archive-item test")
+          url2=$(gh issue create -R "${{ github.repository }}" \
+            --title "[project-actions ${{ github.run_id }}] delete target" \
+            --body "Auto-created issue for delete-item test")
+          echo "Created: $url1 / $url2"
+          echo "url1=$url1" >> "$GITHUB_OUTPUT"
+          echo "url2=$url2" >> "$GITHUB_OUTPUT"
+
+      - name: Create source project (via gh CLI)
+        id: src-project
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+        run: |
+          out=$(gh project create \
+            --owner "${{ github.repository_owner }}" \
+            --title "throwaway-src-${{ github.run_id }}" \
+            --format json)
+          echo "$out"
+          number=$(echo "$out" | jq -r '.number')
+          echo "Source project number: $number"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
 
       - name: github-script
         uses: step-security/dsanders11-project-actions/github-script@release
@@ -44,7 +59,7 @@ jobs:
         uses: step-security/dsanders11-project-actions/get-project@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
-          project-number: ${{ env.SOURCE_PROJECT_NUMBER }}
+          project-number: ${{ steps.src-project.outputs.number }}
 
       - name: find-project
         uses: step-security/dsanders11-project-actions/find-project@release
@@ -57,14 +72,14 @@ jobs:
         uses: step-security/dsanders11-project-actions/find-workflow@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
-          project-number: ${{ env.SOURCE_PROJECT_NUMBER }}
+          project-number: ${{ steps.src-project.outputs.number }}
           name: Item added to project
 
       - name: get-workflow
         uses: step-security/dsanders11-project-actions/get-workflow@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
-          project-number: ${{ env.SOURCE_PROJECT_NUMBER }}
+          project-number: ${{ steps.src-project.outputs.number }}
           number: ${{ steps.find-workflow.outputs.number }}
 
       - name: copy-project
@@ -72,8 +87,8 @@ jobs:
         uses: step-security/dsanders11-project-actions/copy-project@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
-          project-number: ${{ env.SOURCE_PROJECT_NUMBER }}
-          title: test-copy-${{ github.run_id }}
+          project-number: ${{ steps.src-project.outputs.number }}
+          title: throwaway-copy-${{ github.run_id }}
 
       - name: edit-project
         uses: step-security/dsanders11-project-actions/edit-project@release
@@ -89,27 +104,26 @@ jobs:
           project-number: ${{ steps.copy.outputs.number }}
           repository: ${{ github.repository }}
 
-      - name: add-item
-        id: add-item
+      - name: add-item (archive target)
         uses: step-security/dsanders11-project-actions/add-item@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          content-url: ${{ steps.setup-issue.outputs.url }}
+          content-url: ${{ steps.setup-issues.outputs.url1 }}
 
       - name: get-item
         uses: step-security/dsanders11-project-actions/get-item@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.setup-issue.outputs.url }}
+          item: ${{ steps.setup-issues.outputs.url1 }}
 
       - name: edit-item
         uses: step-security/dsanders11-project-actions/edit-item@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.setup-issue.outputs.url }}
+          item: ${{ steps.setup-issues.outputs.url1 }}
           field: Status
           field-value: Done
 
@@ -125,14 +139,21 @@ jobs:
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.setup-issue.outputs.url }}
+          item: ${{ steps.setup-issues.outputs.url1 }}
+
+      - name: add-item (delete target)
+        uses: step-security/dsanders11-project-actions/add-item@release
+        with:
+          token: ${{ secrets.PROJECT_PAT }}
+          project-number: ${{ steps.copy.outputs.number }}
+          content-url: ${{ steps.setup-issues.outputs.url2 }}
 
       - name: delete-item
         uses: step-security/dsanders11-project-actions/delete-item@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
-          item: ${{ steps.setup-issue.outputs.url }}
+          item: ${{ steps.setup-issues.outputs.url2 }}
 
       - name: close-project
         uses: step-security/dsanders11-project-actions/close-project@release
@@ -141,15 +162,27 @@ jobs:
           project-number: ${{ steps.copy.outputs.number }}
           closed: "true"
 
-      - name: delete-project (cleanup copy)
+      - name: delete-project (action, copy)
         if: always() && steps.copy.outputs.number != ''
         uses: step-security/dsanders11-project-actions/delete-project@release
         with:
           token: ${{ secrets.PROJECT_PAT }}
           project-number: ${{ steps.copy.outputs.number }}
 
-      - name: Close test issue
-        if: always() && steps.setup-issue.outputs.url != ''
+      - name: Delete source project (gh CLI cleanup)
+        if: always() && steps.src-project.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+        run: |
+          gh project delete "${{ steps.src-project.outputs.number }}" \
+            --owner "${{ github.repository_owner }}" || true
+
+      - name: Close test issues
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh issue close "${{ steps.setup-issue.outputs.url }}" --reason completed
+        run: |
+          [ -n "${{ steps.setup-issues.outputs.url1 }}" ] && \
+            gh issue close "${{ steps.setup-issues.outputs.url1 }}" --reason completed || true
+          [ -n "${{ steps.setup-issues.outputs.url2 }}" ] && \
+            gh issue close "${{ steps.setup-issues.outputs.url2 }}" --reason completed || true
